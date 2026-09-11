@@ -3,6 +3,7 @@ import Calendar from './components/Calendar';
 import PostForm from './components/PostForm';
 import PostDetail from './components/PostDetail';
 import { CalendarDays, LogOut, Settings, User } from 'lucide-react';
+import { supabase } from './supabase';
 import './App.css';
 
 function App() {
@@ -12,18 +13,49 @@ function App() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [userRole, setUserRole] = useState('agency'); // 'agency' or 'client'
 
-  // Load from local storage on mount
+  // Load from Supabase on mount and set up realtime subscription
   useEffect(() => {
-    const saved = localStorage.getItem('luxus-posts');
-    if (saved) {
-      setPosts(JSON.parse(saved));
-    }
+    fetchPosts();
+
+    // Subscribe to realtime changes
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'posts',
+        },
+        (payload) => {
+          fetchPosts(); // Refresh posts when any change occurs
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  // Save to local storage when posts change
-  useEffect(() => {
-    localStorage.setItem('luxus-posts', JSON.stringify(posts));
-  }, [posts]);
+  const fetchPosts = async () => {
+    const { data, error } = await supabase
+      .from('posts')
+      .select('*')
+      .order('created_at', { ascending: true });
+    
+    if (error) {
+      console.error('Error fetching posts:', error);
+    } else if (data) {
+      // Map DB snake_case to React camelCase
+      const formattedPosts = data.map(post => ({
+        ...post,
+        mediaUrl: post.media_url,
+        createdAt: post.created_at
+      }));
+      setPosts(formattedPosts);
+    }
+  };
 
   const handleDateClick = (date) => {
     if (userRole === 'agency') {
@@ -36,26 +68,54 @@ function App() {
     setViewingPost(post);
   };
 
-  const handleAddPost = (newPost) => {
-    const postWithId = {
-      ...newPost,
-      id: Date.now().toString(),
-      status: 'pending', // pending, approved, rejected
-      createdAt: new Date().toISOString()
+  const handleAddPost = async (newPost) => {
+    const postData = {
+      title: newPost.title,
+      type: newPost.type,
+      caption: newPost.caption,
+      media_url: newPost.mediaUrl, // using snake_case for DB
+      date: newPost.date,
+      status: 'pending',
+      feedback: ''
     };
-    setPosts([...posts, postWithId]);
+
+    // Optimistic update
+    const tempId = Date.now().toString();
+    setPosts([...posts, { ...postData, id: tempId, mediaUrl: postData.media_url }]);
     setIsFormOpen(false);
+
+    const { error } = await supabase
+      .from('posts')
+      .insert([postData]);
+
+    if (error) console.error('Error adding post:', error);
   };
 
-  const handleUpdateStatus = (id, newStatus, feedback = '') => {
+  const handleUpdateStatus = async (id, newStatus, feedback = '') => {
+    // Optimistic update
     const updatedPosts = posts.map(p => p.id === id ? { ...p, status: newStatus, feedback } : p);
     setPosts(updatedPosts);
     setViewingPost(updatedPosts.find(p => p.id === id));
+
+    const { error } = await supabase
+      .from('posts')
+      .update({ status: newStatus, feedback })
+      .eq('id', id);
+
+    if (error) console.error('Error updating status:', error);
   };
 
-  const handleDeletePost = (id) => {
+  const handleDeletePost = async (id) => {
+    // Optimistic update
     setPosts(posts.filter(p => p.id !== id));
     setViewingPost(null);
+
+    const { error } = await supabase
+      .from('posts')
+      .delete()
+      .eq('id', id);
+
+    if (error) console.error('Error deleting post:', error);
   };
 
   return (

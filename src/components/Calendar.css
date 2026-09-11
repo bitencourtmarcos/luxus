@@ -2,7 +2,7 @@
   background: var(--bg-secondary);
   border-radius: var(--radius-xl);
   border: 1px solid var(--border-color);
-  overflow: hidden;
+  overflow-x: auto;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
@@ -13,6 +13,7 @@
   padding: 24px;
   background: rgba(0, 0, 0, 0.2);
   border-bottom: 1px solid var(--border-color);
+  min-width: 800px;
 }
 
 .calendar-header h3 {
@@ -36,6 +37,7 @@
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  min-width: 800px;
 }
 
 .weekday-header {
